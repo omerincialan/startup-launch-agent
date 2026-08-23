@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Startup Launch Agent</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <a class="brand" href="/">
+          <span class="brand-mark">S</span>
+          <span>Startup Agent</span>
+        </a>
+        <div class="phase-label">Launch roadmap</div>
+        <ol class="phases" id="phases">
+          <li data-phase="research"><span>01</span>Research</li>
+          <li data-phase="discovery"><span>02</span>Discovery</li>
+          <li data-phase="hypothesis_selection"><span>03</span>Decision</li>
+          <li data-phase="validation_planning"><span>04</span>Validation</li>
+          <li data-phase="roadmap_planning"><span>05</span>Roadmap</li>
+          <li data-phase="validation_ready"><span>06</span>Ready</li>
+        </ol>
+        <div class="sidebar-note">Evidence before execution.</div>
+      </aside>
+
+      <main>
+        <header>
+          <div><span class="eyebrow">FOUNDER WORKSPACE</span><h1>Turn an idea into<br />a testable company.</h1></div>
+          <div class="status-pill" id="statusPill"><i></i><span>Ready</span></div>
+        </header>
+
+        <section class="intro" id="startView">
+          <div class="section-number">01 — DEFINE THE OPPORTUNITY</div>
+          <h2>Describe your startup idea.</h2>
+          <p>One or two sentences is enough. You’ll get three directions to compare before the agent creates your plan.</p>
+          <div class="expectation-row">
+            <span><b>1</b> Share your idea</span><span><b>2</b> Choose a direction</span><span><b>3</b> Get a 30-day plan</span>
+          </div>
+          <form id="startForm">
+            <label for="idea">What do you want to build?</label>
+            <textarea id="idea" rows="4" maxlength="600" placeholder="Example: An AI assistant that helps real-estate agents follow up with leads…" required></textarea>
+            <div class="field-meta"><span>Be specific about the user and problem if you can.</span><span id="ideaCount">0 / 600</span></div>
+            <div class="examples"><span>Try an example:</span><button type="button" data-example="An AI assistant that helps independent real-estate agents follow up with leads and never miss a potential buyer.">Real estate</button><button type="button" data-example="A tool that helps small ecommerce brands turn customer reviews into better product pages and ads.">Ecommerce</button><button type="button" data-example="An AI copilot that helps solo consultants prepare proposals and follow up with prospects.">Consulting</button></div>
+            <details class="advanced">
+              <summary>Project settings</summary>
+              <label for="projectId">Project name <small>Used to save and resume your work</small></label>
+              <input id="projectId" required />
+            </details>
+            <button type="submit" class="start-button">Explore this idea <b>→</b></button>
+            <p class="privacy-note">Your progress is saved locally so you can continue later.</p>
+          </form>
+          <div class="resume-row"><span>Already started?</span><button type="button" id="showResume">Resume a saved project</button></div>
+          <form id="resumeForm" class="resume-form hidden">
+            <label for="resumeId">Saved project name</label>
+            <div class="inline-form"><input id="resumeId" placeholder="realtor-demo" required /><button type="submit">Resume →</button></div>
+          </form>
+        </section>
+
+        <section class="loading hidden" id="loadingView">
+          <div class="orb"><span></span></div>
+          <div class="section-number">AGENT AT WORK</div>
+          <h2 id="loadingTitle">Researching your opportunity…</h2>
+          <p>This usually takes 1–3 minutes. You can leave this tab open while the agent works.</p>
+          <div class="loading-steps"><span class="on">Understanding users</span><span>Finding pain points</span><span>Comparing opportunities</span></div>
+        </section>
+
+        <section class="decision hidden" id="decisionView">
+          <div class="section-number">FOUNDER DECISION REQUIRED</div>
+          <h2>Choose what to validate first.</h2>
+          <p>There is no permanent commitment here. Pick the option that feels most worth testing first.</p>
+          <div class="document" id="hypotheses"></div>
+          <form id="decisionForm" class="decision-form">
+            <label for="choice">Your decision</label>
+            <div class="choice-row">
+              <button type="button" class="choice" data-choice="1">Hypothesis 1</button>
+              <button type="button" class="choice" data-choice="2">Hypothesis 2</button>
+              <button type="button" class="choice" data-choice="3">Hypothesis 3</button>
+            </div>
+            <textarea id="choice" rows="2" placeholder="Choose above, or write what you would change…" required></textarea>
+            <button type="submit" class="primary">Create validation roadmap <b>→</b></button>
+          </form>
+        </section>
+
+        <section class="results hidden" id="resultsView">
+          <div class="success-mark">✓</div>
+          <div class="section-number">VALIDATION READY</div>
+          <h2>Your first 30 days are mapped.</h2>
+          <div class="result-summary"><span>✓ Founder decision captured</span><span>✓ Validation criteria defined</span><span>✓ Next 30 days prioritized</span></div>
+          <p class="artifact" id="artifact"></p>
+          <div class="tabs">
+            <button class="tab active" data-tab="roadmap">30-day roadmap</button>
+            <button class="tab" data-tab="validation">Validation plan</button>
+            <button class="tab" data-tab="research">Research</button>
+          </div>
+          <div class="document" id="resultDocument"></div>
+          <button class="secondary" id="newProject">Start another project</button>
+        </section>
+
+        <div class="error hidden" id="errorBox"></div>
+      </main>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>
