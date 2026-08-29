@@ -10,7 +10,7 @@ Activate the existing environment and start a named project:
 
 ```bash
 source .venv/bin/activate
-python agent.py "An AI assistant for real-estate agents" --project realtor-demo
+python agent.py "A tool that helps small businesses follow up with leads" --project lead-demo
 ```
 
 The agent pauses after presenting three hypotheses. Enter `1`, `2`, `3`, or give
@@ -32,14 +32,14 @@ do not want it to open a browser automatically.
 Resume an interrupted project:
 
 ```bash
-python agent.py --resume realtor-demo
+python agent.py --resume lead-demo
 ```
 
 For a scripted demo, provide the founder decision up front:
 
 ```bash
-python agent.py "An AI assistant for real-estate agents" \
-  --project realtor-demo-2 --choice 2
+python agent.py "A tool that helps small businesses follow up with leads" \
+  --project lead-demo-2 --choice 2
 ```
 
 Set `OPENAI_API_KEY` in `.env`. Optionally set `STARTUP_AGENT_MODEL` to override

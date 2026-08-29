@@ -72,6 +72,8 @@ Goal: {state['goal']}
 Investigate target users, their jobs-to-be-done, recurring workflow problems,
 existing alternatives, likely competitors, and areas where AI could create
 measurable value. State what evidence is needed. Do not recommend a product yet.
+Infer the relevant market and users only from the submitted idea. Do not assume
+an industry, customer type, or business model that the founder did not provide.
 Use clear Markdown headings and bullets.
 """
     return {
@@ -91,9 +93,11 @@ Research plan:
 {state['research_plan']}
 
 Using existing knowledge, produce an initial market analysis. Identify major
-workflows, painful or repetitive tasks, communication and lead-management tasks,
-existing software categories, and gaps in current solutions. Label every material
+workflows, painful or repetitive tasks, important decisions and interactions,
+existing solution categories, and gaps in current alternatives. Label every material
 claim as either OBSERVATION or ASSUMPTION. This is preliminary research, not proof.
+Adapt the analysis to the idea's actual market; do not default to real estate or
+any other example industry.
 Use concise Markdown.
 """
     return {"research_findings": run_llm(prompt)}
