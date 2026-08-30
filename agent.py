@@ -8,18 +8,20 @@ human decision durable, so a project can be stopped and resumed later.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, Literal, TypedDict, TypeVar
 
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
+from pydantic import BaseModel, Field
 
 
 ROOT = Path(__file__).resolve().parent
@@ -38,10 +40,41 @@ class StartupState(TypedDict, total=False):
     pain_points: str
     hypotheses: str
     selected_hypothesis: str
+    positioning: dict[str, str]
+    positioning_evaluation: dict[str, Any]
+    best_positioning: dict[str, str]
+    best_positioning_evaluation: dict[str, Any]
+    positioning_attempts: list[dict[str, Any]]
+    positioning_iteration: int
+    positioning_threshold: float
+    positioning_max_iterations: int
     validation_plan: str
     thirty_day_roadmap: str
     current_phase: str
     status: str
+    silent: bool
+
+
+class PositioningArtifact(BaseModel):
+    statement: str = Field(description="One-sentence positioning statement")
+    headline: str = Field(description="Short landing-page headline")
+    target_customer: str
+    painful_problem: str
+    differentiated_value: str
+    proof_needed: str
+
+
+class PositioningEvaluation(BaseModel):
+    clarity: float = Field(ge=0, le=10)
+    specificity: float = Field(ge=0, le=10)
+    customer_relevance: float = Field(ge=0, le=10)
+    differentiation: float = Field(ge=0, le=10)
+    credibility: float = Field(ge=0, le=10)
+    strengths: list[str]
+    feedback: list[str]
+
+
+StructuredModel = TypeVar("StructuredModel", bound=BaseModel)
 
 
 def make_llm() -> ChatOpenAI:
@@ -56,8 +89,13 @@ def run_llm(prompt: str) -> str:
     return str(response.content)
 
 
+def run_structured(prompt: str, schema: type[StructuredModel]) -> StructuredModel:
+    model = make_llm().with_structured_output(schema)
+    return model.invoke(prompt)
+
+
 def announce(step: int, title: str) -> None:
-    print(f"\n[{step}/6] {title}", flush=True)
+    print(f"\n[{step}/8] {title}", flush=True)
 
 
 def plan_research(state: StartupState) -> dict[str, str]:
@@ -149,12 +187,163 @@ def human_selection(state: StartupState) -> dict[str, str]:
     return {
         "selected_hypothesis": str(answer).strip(),
         "status": "human_decision_received",
+        "current_phase": "positioning_generation",
+    }
+
+
+def positioning_markdown(positioning: dict[str, str]) -> str:
+    return "\n".join(
+        [
+            f"## {positioning['headline']}",
+            "",
+            positioning["statement"],
+            "",
+            f"**Target customer:** {positioning['target_customer']}",
+            f"**Painful problem:** {positioning['painful_problem']}",
+            f"**Differentiated value:** {positioning['differentiated_value']}",
+            f"**Proof still needed:** {positioning['proof_needed']}",
+        ]
+    )
+
+
+def generate_positioning(state: StartupState) -> dict[str, Any]:
+    iteration = state.get("positioning_iteration", 0) + 1
+    if not state.get("silent"):
+        print(f"\n[5/8] Positioning iteration {iteration}", flush=True)
+
+    previous = state.get("positioning_evaluation")
+    improvement_context = ""
+    if previous:
+        improvement_context = f"""
+Best positioning so far:
+{json.dumps(state.get('best_positioning', state.get('positioning', {})), indent=2)}
+
+Evaluator feedback:
+{json.dumps(previous.get('feedback', []), indent=2)}
+
+Create a materially improved version. Address the feedback without adding claims
+that have not been validated.
+"""
+
+    prompt = f"""
+You are a startup positioning strategist.
+
+Startup idea:
+{state['startup_idea']}
+
+Selected problem hypothesis or founder feedback:
+{state['selected_hypothesis']}
+
+Candidate hypotheses shown to the founder:
+{state.get('hypotheses', 'The evaluation supplied the selected hypothesis directly.')}
+
+Relevant preliminary findings:
+{state.get('research_findings', 'No external findings supplied.')}
+{improvement_context}
+
+Create positioning that names a specific customer, a concrete painful situation,
+a valuable outcome, and a believable difference from alternatives. Do not invent
+traction, customer quotes, performance numbers, or proof.
+"""
+    artifact = run_structured(prompt, PositioningArtifact)
+    return {
+        "positioning": artifact.model_dump(),
+        "positioning_iteration": iteration,
+        "current_phase": "positioning_evaluation",
+        "status": "running",
+    }
+
+
+def evaluate_positioning(state: StartupState) -> dict[str, Any]:
+    if not state.get("silent"):
+        print("[6/8] Evaluating positioning quality", flush=True)
+    prompt = f"""
+You are a strict startup-positioning evaluator. Score the candidate independently.
+
+Startup idea:
+{state['startup_idea']}
+
+Selected hypothesis:
+{state['selected_hypothesis']}
+
+Candidate positioning:
+{json.dumps(state['positioning'], indent=2)}
+
+Score each dimension from 0 to 10:
+- clarity: understandable on first reading
+- specificity: precise customer, situation, and outcome
+- customer_relevance: addresses an urgent and meaningful problem
+- differentiation: gives a reason to choose it over alternatives
+- credibility: avoids unsupported promises and identifies proof still needed
+
+Use 8+ only for unusually strong work. Give concrete feedback that can guide the
+next iteration. Do not reward polished language when the strategy is vague.
+"""
+    raw = run_structured(prompt, PositioningEvaluation)
+    values = raw.model_dump()
+    dimensions = {
+        key: values[key]
+        for key in (
+            "clarity",
+            "specificity",
+            "customer_relevance",
+            "differentiation",
+            "credibility",
+        )
+    }
+    score = round(sum(dimensions.values()) / len(dimensions), 2)
+    threshold = state.get("positioning_threshold", 8.0)
+    passed = score >= threshold
+    evaluation = {
+        "score": score,
+        "threshold": threshold,
+        "passed": passed,
+        "dimensions": dimensions,
+        "strengths": values["strengths"],
+        "feedback": values["feedback"],
+    }
+    attempt = {
+        "iteration": state["positioning_iteration"],
+        "positioning": state["positioning"],
+        "evaluation": evaluation,
+    }
+    attempts = [*state.get("positioning_attempts", []), attempt]
+    best_evaluation = state.get("best_positioning_evaluation")
+    if best_evaluation is None or score > best_evaluation["score"]:
+        best_positioning = state["positioning"]
+        best_evaluation = evaluation
+    else:
+        best_positioning = state["best_positioning"]
+    return {
+        "positioning_evaluation": evaluation,
+        "positioning_attempts": attempts,
+        "best_positioning": best_positioning,
+        "best_positioning_evaluation": best_evaluation,
+        "current_phase": "positioning_ready" if passed else "positioning_improvement",
+    }
+
+
+def route_positioning(
+    state: StartupState,
+) -> Literal["generate_positioning", "select_best_positioning"]:
+    if state["best_positioning_evaluation"]["passed"]:
+        return "select_best_positioning"
+    if state["positioning_iteration"] >= state.get("positioning_max_iterations", 3):
+        return "select_best_positioning"
+    return "generate_positioning"
+
+
+def select_best_positioning(state: StartupState) -> dict[str, Any]:
+    """Carry the strongest attempt forward, even if a later retry regressed."""
+    return {
+        "positioning": state["best_positioning"],
+        "positioning_evaluation": state["best_positioning_evaluation"],
         "current_phase": "validation_planning",
     }
 
 
 def create_validation_plan(state: StartupState) -> dict[str, str]:
-    announce(5, "Creating the validation plan")
+    announce(7, "Creating the validation plan")
     prompt = f"""
 You are a customer-discovery strategist.
 
@@ -162,6 +351,12 @@ Startup idea: {state['startup_idea']}
 Founder selection or feedback: {state['selected_hypothesis']}
 Candidate hypotheses:
 {state['hypotheses']}
+
+Best positioning after {state.get('positioning_iteration', 0)} iteration(s):
+{positioning_markdown(state['positioning'])}
+
+Positioning evaluation:
+{json.dumps(state.get('positioning_evaluation', {}), indent=2)}
 
 Create a pre-product validation plan. Define the ICP, exact problem, alternatives,
 five critical assumptions, interview recruiting strategy, ten non-leading interview
@@ -176,7 +371,7 @@ and the cheapest next experiment. Treat the hypothesis as unproven. Use Markdown
 
 
 def create_thirty_day_roadmap(state: StartupState) -> dict[str, str]:
-    announce(6, "Turning strategy into a 30-day roadmap")
+    announce(8, "Turning strategy into a 30-day roadmap")
     prompt = f"""
 Turn this validation plan into a practical 30-day founder roadmap:
 
@@ -202,6 +397,9 @@ def build_graph(checkpointer: SqliteSaver):
     builder.add_node("synthesize", synthesize_pain_points)
     builder.add_node("hypotheses", generate_hypotheses)
     builder.add_node("human_selection", human_selection)
+    builder.add_node("generate_positioning", generate_positioning)
+    builder.add_node("evaluate_positioning", evaluate_positioning)
+    builder.add_node("select_best_positioning", select_best_positioning)
     builder.add_node("validation_plan", create_validation_plan)
     builder.add_node("roadmap", create_thirty_day_roadmap)
     builder.add_edge(START, "plan_research")
@@ -209,10 +407,40 @@ def build_graph(checkpointer: SqliteSaver):
     builder.add_edge("research", "synthesize")
     builder.add_edge("synthesize", "hypotheses")
     builder.add_edge("hypotheses", "human_selection")
-    builder.add_edge("human_selection", "validation_plan")
+    builder.add_edge("human_selection", "generate_positioning")
+    builder.add_edge("generate_positioning", "evaluate_positioning")
+    builder.add_conditional_edges(
+        "evaluate_positioning",
+        route_positioning,
+        {
+            "generate_positioning": "generate_positioning",
+            "select_best_positioning": "select_best_positioning",
+        },
+    )
+    builder.add_edge("select_best_positioning", "validation_plan")
     builder.add_edge("validation_plan", "roadmap")
     builder.add_edge("roadmap", END)
     return builder.compile(checkpointer=checkpointer)
+
+
+def build_positioning_graph():
+    """Build the isolated recursive loop used by automated evaluations."""
+    builder = StateGraph(StartupState)
+    builder.add_node("generate_positioning", generate_positioning)
+    builder.add_node("evaluate_positioning", evaluate_positioning)
+    builder.add_node("select_best_positioning", select_best_positioning)
+    builder.add_edge(START, "generate_positioning")
+    builder.add_edge("generate_positioning", "evaluate_positioning")
+    builder.add_conditional_edges(
+        "evaluate_positioning",
+        route_positioning,
+        {
+            "generate_positioning": "generate_positioning",
+            "select_best_positioning": "select_best_positioning",
+        },
+    )
+    builder.add_edge("select_best_positioning", END)
+    return builder.compile()
 
 
 def safe_project_id(value: str) -> str:
@@ -237,6 +465,17 @@ def save_artifact(state: StartupState) -> Path:
         ("Pain Points", state.get("pain_points", "")),
         ("Competing Hypotheses", state.get("hypotheses", "")),
         ("Founder Decision", state.get("selected_hypothesis", "")),
+        (
+            "Positioning Iteration History",
+            "\n\n".join(
+                f"## Iteration {attempt['iteration']} — "
+                f"{attempt['evaluation']['score']}/10\n\n"
+                f"{positioning_markdown(attempt['positioning'])}\n\n"
+                f"**Feedback:** "
+                f"{' '.join(attempt['evaluation']['feedback'])}"
+                for attempt in state.get("positioning_attempts", [])
+            ),
+        ),
         ("Validation Plan", state.get("validation_plan", "")),
         ("30-Day Roadmap", state.get("thirty_day_roadmap", "")),
     ]
@@ -324,6 +563,10 @@ def main() -> None:
                     ),
                     "current_phase": "planning",
                     "status": "running",
+                    "positioning_attempts": [],
+                    "positioning_iteration": 0,
+                    "positioning_threshold": 8.0,
+                    "positioning_max_iterations": 3,
                 },
                 config=config,
             )

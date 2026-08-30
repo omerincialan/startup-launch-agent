@@ -20,7 +20,7 @@ function setStatus(text, busy = false) {
 }
 
 function updatePhases(current) {
-  const order = ['research', 'discovery', 'hypothesis_selection', 'validation_planning', 'roadmap_planning', 'validation_ready'];
+  const order = ['research', 'discovery', 'hypothesis_selection', 'positioning_generation', 'positioning_evaluation', 'validation_planning', 'roadmap_planning', 'validation_ready'];
   const index = Math.max(0, order.indexOf(current));
   document.querySelectorAll('.phases li').forEach((item, i) => {
     item.classList.toggle('active', i === index);
@@ -152,8 +152,19 @@ document.getElementById('decisionForm').addEventListener('submit', async event =
 });
 
 function showResult(tab) {
+  const positioningHistory = (appState.state.positioning_attempts || []).map(attempt => {
+    const evaluation = attempt.evaluation;
+    const position = attempt.positioning;
+    const dimensions = Object.entries(evaluation.dimensions || {})
+      .map(([name, score]) => `- **${name.replaceAll('_', ' ')}:** ${score}/10`)
+      .join('\n');
+    return `## Iteration ${attempt.iteration} — ${evaluation.score}/10${evaluation.passed ? ' ✓ PASS' : ''}\n\n` +
+      `### ${position.headline}\n\n${position.statement}\n\n` +
+      `${dimensions}\n\n**Evaluator feedback:**\n${(evaluation.feedback || []).map(item => `- ${item}`).join('\n')}`;
+  }).join('\n\n---\n\n');
   const content = {
     roadmap: appState.state.thirty_day_roadmap,
+    positioning: positioningHistory || 'No positioning iterations were saved.',
     validation: appState.state.validation_plan,
     research: `${appState.state.research_plan}\n\n${appState.state.research_findings}`
   };
