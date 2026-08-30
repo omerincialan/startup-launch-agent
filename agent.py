@@ -45,6 +45,7 @@ class StartupState(TypedDict, total=False):
     best_positioning: dict[str, str]
     best_positioning_evaluation: dict[str, Any]
     positioning_attempts: list[dict[str, Any]]
+    positioning_candidates: list[dict[str, str]]
     positioning_iteration: int
     positioning_threshold: float
     positioning_max_iterations: int
@@ -206,6 +207,38 @@ def positioning_markdown(positioning: dict[str, str]) -> str:
     )
 
 
+CANDIDATE_ANGLES = (
+    "",
+    """
+For this draft, lead with the mechanism: make the differentiated value a concrete
+capability or insight the product has that the alternatives structurally cannot copy.
+""",
+    """
+For this draft, lead with the outcome: make the painful problem and the value the
+customer gains a measurable change in their week, expressed in their own terms.
+""",
+)
+
+
+def candidates_per_iteration() -> int:
+    """How many positioning drafts to sample per iteration (>=1).
+
+    Sampling several drafts per iteration and keeping the global best turns the loop
+    into best-of-N selection instead of one linear polish chain. Configure with
+    STARTUP_AGENT_CANDIDATES; default 2 keeps API cost bounded.
+    """
+    try:
+        value = int(os.getenv("STARTUP_AGENT_CANDIDATES", "2"))
+    except ValueError:
+        value = 2
+    return max(1, value)
+
+
+def candidate_angles() -> tuple[str, ...]:
+    """Instructed angles used to diversify the drafts inside one iteration."""
+    return CANDIDATE_ANGLES
+
+
 def generate_positioning(state: StartupState) -> dict[str, Any]:
     iteration = state.get("positioning_iteration", 0) + 1
     if not state.get("silent"):
@@ -259,18 +292,24 @@ Create positioning that names a specific customer, a concrete painful situation,
 a valuable outcome, and a believable difference from alternatives. Do not invent
 traction, customer quotes, performance numbers, or proof.
 """
-    artifact = run_structured(prompt, PositioningArtifact)
+    candidates = []
+    angles = candidate_angles()
+    for index in range(candidates_per_iteration()):
+        angle = angles[index % len(angles)]
+        angled_prompt = prompt if not angle else f"{prompt}\n{angle}\n"
+        artifact = run_structured(angled_prompt, PositioningArtifact)
+        candidates.append(artifact.model_dump())
     return {
-        "positioning": artifact.model_dump(),
+        "positioning": candidates[0],
+        "positioning_candidates": candidates,
         "positioning_iteration": iteration,
         "current_phase": "positioning_evaluation",
         "status": "running",
     }
 
 
-def evaluate_positioning(state: StartupState) -> dict[str, Any]:
-    if not state.get("silent"):
-        print("[6/8] Evaluating positioning quality", flush=True)
+def score_positioning(state: StartupState, positioning: dict[str, str]) -> dict[str, Any]:
+    """Ask the evaluator to score one candidate and normalise the result."""
     prompt = f"""
 You are a strict startup-positioning evaluator. Score the candidate independently.
 
@@ -281,7 +320,7 @@ Selected hypothesis:
 {state['selected_hypothesis']}
 
 Candidate positioning:
-{json.dumps(state['positioning'], indent=2)}
+{json.dumps(positioning, indent=2)}
 
 Score each dimension from 0 to 10:
 - clarity: understandable on first reading
@@ -307,33 +346,61 @@ next iteration. Do not reward polished language when the strategy is vague.
     }
     score = round(sum(dimensions.values()) / len(dimensions), 2)
     threshold = state.get("positioning_threshold", 8.0)
-    passed = score >= threshold
-    evaluation = {
+    return {
         "score": score,
         "threshold": threshold,
-        "passed": passed,
+        "passed": score >= threshold,
         "dimensions": dimensions,
         "strengths": values["strengths"],
         "feedback": values["feedback"],
     }
-    attempt = {
-        "iteration": state["positioning_iteration"],
-        "positioning": state["positioning"],
-        "evaluation": evaluation,
-    }
-    attempts = [*state.get("positioning_attempts", []), attempt]
+
+
+def _beats(candidate: dict[str, Any], incumbent: dict[str, Any] | None) -> bool:
+    """Selection rule: higher score wins; on a tie prefer an attempt that passes."""
+    if incumbent is None:
+        return True
+    if candidate["score"] != incumbent["score"]:
+        return candidate["score"] > incumbent["score"]
+    return bool(candidate["passed"]) and not incumbent["passed"]
+
+
+def evaluate_positioning(state: StartupState) -> dict[str, Any]:
+    if not state.get("silent"):
+        print("[6/8] Evaluating positioning quality", flush=True)
+
+    candidates = state.get("positioning_candidates") or [state["positioning"]]
+    attempts = list(state.get("positioning_attempts", []))
+    best_positioning = state.get("best_positioning")
     best_evaluation = state.get("best_positioning_evaluation")
-    if best_evaluation is None or score > best_evaluation["score"]:
-        best_positioning = state["positioning"]
-        best_evaluation = evaluation
-    else:
-        best_positioning = state["best_positioning"]
+    iteration_best_positioning = None
+    iteration_best_evaluation = None
+
+    for candidate in candidates:
+        evaluation = score_positioning(state, candidate)
+        attempts.append(
+            {
+                "iteration": state["positioning_iteration"],
+                "positioning": candidate,
+                "evaluation": evaluation,
+            }
+        )
+        if _beats(evaluation, iteration_best_evaluation):
+            iteration_best_positioning = candidate
+            iteration_best_evaluation = evaluation
+        if _beats(evaluation, best_evaluation):
+            best_positioning = candidate
+            best_evaluation = evaluation
+
     return {
-        "positioning_evaluation": evaluation,
+        "positioning": iteration_best_positioning,
+        "positioning_evaluation": iteration_best_evaluation,
         "positioning_attempts": attempts,
         "best_positioning": best_positioning,
         "best_positioning_evaluation": best_evaluation,
-        "current_phase": "positioning_ready" if passed else "positioning_improvement",
+        "current_phase": (
+            "positioning_ready" if best_evaluation["passed"] else "positioning_improvement"
+        ),
     }
 
 
