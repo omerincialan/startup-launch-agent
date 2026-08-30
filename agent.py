@@ -211,18 +211,32 @@ def generate_positioning(state: StartupState) -> dict[str, Any]:
     if not state.get("silent"):
         print(f"\n[5/8] Positioning iteration {iteration}", flush=True)
 
-    previous = state.get("positioning_evaluation")
+    best_evaluation = state.get("best_positioning_evaluation") or state.get(
+        "positioning_evaluation"
+    )
+    latest = state.get("positioning_evaluation")
     improvement_context = ""
-    if previous:
+    if best_evaluation:
+        best_positioning = state.get("best_positioning", state.get("positioning", {}))
+        notes = list(best_evaluation.get("feedback", []))
+        if latest and latest is not best_evaluation:
+            notes.extend(latest.get("feedback", []))
         improvement_context = f"""
 Best positioning so far:
-{json.dumps(state.get('best_positioning', state.get('positioning', {})), indent=2)}
+{json.dumps(best_positioning, indent=2)}
 
-Evaluator feedback:
-{json.dumps(previous.get('feedback', []), indent=2)}
+Score of that best attempt: {best_evaluation.get('score')} / 10
 
-Create a materially improved version. Address the feedback without adding claims
-that have not been validated.
+Per-dimension scores of that best attempt:
+{json.dumps(best_evaluation.get('dimensions', {}), indent=2)}
+
+Evaluator feedback to act on:
+{json.dumps(notes, indent=2)}
+
+Write a materially stronger version that beats score {best_evaluation.get('score')}.
+Keep whatever already scores well, and concentrate the rewrite on the lowest
+dimensions above. Address the feedback without adding claims that have not been
+validated.
 """
 
     prompt = f"""
@@ -323,10 +337,24 @@ next iteration. Do not reward polished language when the strategy is vague.
     }
 
 
+def stop_on_first_pass() -> bool:
+    """Whether the positioning loop halts as soon as an attempt clears threshold.
+
+    Default is False: spend the whole iteration budget and keep the best attempt,
+    because stopping at the first pass pins quality to the threshold itself.
+    Override with STARTUP_AGENT_STOP_ON_PASS=1 for the cheap interactive demo.
+    """
+    return os.getenv("STARTUP_AGENT_STOP_ON_PASS", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
 def route_positioning(
     state: StartupState,
 ) -> Literal["generate_positioning", "select_best_positioning"]:
-    if state["best_positioning_evaluation"]["passed"]:
+    if stop_on_first_pass() and state["best_positioning_evaluation"]["passed"]:
         return "select_best_positioning"
     if state["positioning_iteration"] >= state.get("positioning_max_iterations", 3):
         return "select_best_positioning"
