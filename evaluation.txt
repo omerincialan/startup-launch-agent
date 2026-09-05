@@ -1,1 +1,2 @@
 This is to take notes and plan an evaluation pipeline
+- Not having a reliable evaluation pipeline is one of the biggest blocks to AI adoption.
