@@ -1,0 +1,6 @@
+{
+  "project": "omerincialan/startup-agent-positioning-harness",
+  "host": "https://app.autolab.ai",
+  "base": "main",
+  "remote": "origin"
+}

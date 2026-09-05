@@ -1,0 +1,14 @@
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = false
+	logallrefupdates = true
+	worktree = /Users/omerincialan/startup-agent
+	ignorecase = true
+	precomposeunicode = true
+[user]
+	name = omerincialan
+	email = omerincialan@users.autolab.ai
+[remote "origin"]
+	url = https://app.autolab.ai/api/v1/projects/omerincialan/startup-agent-positioning-harness/repo.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
