@@ -8,5 +8,4 @@ This is to take notes and plan an evaluation pipeline
      Step 3. Define Evaluation Methods and Data
         - Select evaluation methods
     Step 4. Talk to a technical person
-    Prepare to coreweava hackathon
 
