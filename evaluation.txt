@@ -1,3 +1,9 @@
 This is to take notes and plan an evaluation pipeline
 - Not having a reliable evaluation pipeline is one of the biggest blocks to AI adoption.
 - We should make sure we measure the quality of the responses.
+     Step 1. Evaluate All Components in a System
+     Step 2. Create an Evaluation Guideline
+    Create scoring rubrics with examples
+    - Tie evaluation metrics to business metrics
+    * Step 3. Define Evaluation Methods and Data
+    * Select evaluation methods
